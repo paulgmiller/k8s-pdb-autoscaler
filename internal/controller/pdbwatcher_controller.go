@@ -118,20 +118,20 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			logger.Error(err, "Failed to update PDBWatcher status")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, nil //should we go rety in case there is also an eviction or just wait till the next eviction
 	}
 
 	// Log current state before checks
 	logger.Info(fmt.Sprintf("Checking PDB for %s: DisruptionsAllowed=%d, MinReplicas=%d", pdb.Name, pdb.Status.DisruptionsAllowed, pdbWatcher.Status.MinReplicas))
 
+	// Check if there are recent evictions
+	if !unhandledEviction(ctx, *pdbWatcher) {
+		logger.Info("No unhandled eviction ", "pdbname", pdb.Name)
+		return ctrl.Result{}, nil
+	}
+
 	// Check the DisruptionsAllowed field
 	if pdb.Status.DisruptionsAllowed == 0 {
-		// Check if there are recent evictions
-
-		if !recentEviction(ctx, *pdbWatcher) {
-			logger.Info("No recent evictions ", "pdbname", pdb.Name)
-			return ctrl.Result{}, nil
-		}
 		//What if the evict went through because the pod being evicted wasn't ready anyways? Handle that in webhook or here?
 
 		// Handle nil Deployment Strategy and MaxSurge
@@ -143,28 +143,12 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err != nil {
 			logger.Error(err, "failed to update deployment")
 			return ctrl.Result{}, err
-		}
-
-		// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
-		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
-		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
-		//should we clear evictions?
-		err = r.Status().Update(ctx, pdbWatcher)
-		if err != nil {
-			logger.Error(err, "Failed to update PDBWatcher status")
-			return ctrl.Result{}, err
-		}
-
+		}	
+		
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Scaled up Deployment %s/%s to %d replicas", target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
-		return ctrl.Result{}, nil
-
-	}
-
-	// Watch for changes in PDB to revert to original state
-	if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
-
-		// Revert Target to the original state
+	} else  if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
+		//okay we aren't at allowed disruptions Revert Target to the original state
 		// This is bad if its a statefulset because scale down removes non zero replicas first even if zero isn't ready
 		target.SetReplicas(pdbWatcher.Status.MinReplicas)
 		err = r.Update(ctx, target.Obj())
@@ -174,15 +158,18 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Reverted Deployment %s/%s to %d replicas", target.Obj().GetNamespace(), target.Obj().GetName(), target.GetReplicas()))
+	} // else log nothing to do or too noisy?
 
-		// Update ResourceVersion in PDBWatcher status
-		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
-		err = r.Status().Update(ctx, pdbWatcher)
-		if err != nil {
-			logger.Error(err, "Failed to update PDBWatcher status")
-			return ctrl.Result{}, err
-		}
+	// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
+	pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
+	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+	//should we clear evictions?
+	err = r.Status().Update(ctx, pdbWatcher)
+	if err != nil {
+		logger.Error(err, "Failed to update PDBWatcher status")
+		return ctrl.Result{}, err
 	}
+
 
 	return ctrl.Result{}, nil
 }
@@ -276,23 +263,24 @@ func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 
 	surge := target.GetMaxSurge()
 	var maxSurge int32
 	if surge.Type == intstr.Int {
-		maxSurge = surge.IntVal
-	} else if surge.Type == intstr.String {
+		return minrepicas
+	} 
+	
+	if surge.Type == intstr.String {
 		percentageStr := strings.TrimSuffix(surge.StrVal, "%")
 		percentage, err := strconv.Atoi(percentageStr)
 		if err != nil {
 			//todo add name?
 			log.FromContext(ctx).Error(err, "invalid surge")
 		}
-		maxSurge = int32(math.Ceil((float64(minrepicas) * float64(percentage)) / 100.0))
-	} else {
-		panic("must be string or int")
-	}
+		return minrepicas + int32(math.Ceil((float64(minrepicas) * float64(percentage)) / 100.0))
+	} 
+	
+	panic("must be string or int")
 
-	return minrepicas + maxSurge
 }
 
-func recentEviction(ctx context.Context, watcher myappsv1.PDBWatcher) bool {
+func unhandledEviction(ctx context.Context, watcher myappsv1.PDBWatcher) bool {
 	logger := log.FromContext(ctx)
 	lastevict := watcher.Spec.LastEviction
 	if lastevict.EvictionTime == "" {
