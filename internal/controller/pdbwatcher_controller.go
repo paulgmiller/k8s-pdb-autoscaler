@@ -68,8 +68,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err // Error fetching PDB
 	}
 
-	deploymentName := pdbWatcher.Spec.TargetName
-	if deploymentName == "" {
+	if pdbWatcher.Spec.TargetName == "" {
 		//move away from doing this. Have another controller that watches pdbs and creates/updates pdbwatchers
 		deploymentName, err := r.discoverDeployment(ctx, pdb) //move this out of thie controller to a controller that watches pdbs
 		if err != nil {
@@ -87,7 +86,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	}
 
-	// Fetch the Deployment
+	// Fetch the Deployment or Statefulset
 	target, err := GetSurger(pdbWatcher.Spec.TargetKind)
 	if err != nil {
 		return ctrl.Result{}, err
