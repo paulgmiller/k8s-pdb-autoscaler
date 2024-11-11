@@ -261,7 +261,6 @@ func (r *PDBWatcherReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 {
 
 	surge := target.GetMaxSurge()
-	var maxSurge int32
 	if surge.Type == intstr.Int {
 		return minrepicas
 	} 
