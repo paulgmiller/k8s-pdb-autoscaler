@@ -90,7 +90,7 @@ func (e *EvictionHandler) Handle(ctx context.Context, req admission.Request) adm
 	if err != nil {
 		logger.Error(err, "Failed to parse eviction time " + applicablePDBWatcher.Spec.LastEviction .EvictionTime)
 	} else {
-		if time.Since(evictionTime) < time.Minute { //mak configurable in CRD  also reuse now. 
+		if now.Sub(evictionTime) < time.Minute { //mak configurable in CRD  
 			logger.Info("Eviction logged successfully", "podName", req.Name, "evictionTime", currentEviction.EvictionTime)
 			return admission.Allowed("eviction ignored")
 		}

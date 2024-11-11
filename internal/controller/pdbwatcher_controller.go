@@ -148,8 +148,19 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Scaled up Deployment %s/%s to %d replicas", target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
 	} else  if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
+		//don't scale down immediately as eviction and scaledown might remove all good pods.
+		//instead give a cool off time?
+		evictionTime, err := time.Parse(time.RFC3339, pdbWatcher.Status.LastEviction.EvictionTime)
+		if err != nil {
+			logger.Error(err, "Failed to parse eviction time")
+			return ctrl.Result{}, err
+		}
+
+		if time.Since(evictionTime) < 10 * time.Second  { //this is trcky how long do we wate for eviction to proccess
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil //requeue but how long to wait?
+		}
+
 		//okay we aren't at allowed disruptions Revert Target to the original state
-		// This is bad if its a statefulset because scale down removes non zero replicas first even if zero isn't ready
 		target.SetReplicas(pdbWatcher.Status.MinReplicas)
 		err = r.Update(ctx, target.Obj())
 		if err != nil {
@@ -270,6 +281,7 @@ func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 
 
 }
 
+//should these be guids rather than times?
 func unhandledEviction(ctx context.Context, watcher myappsv1.PDBWatcher) bool {
 	logger := log.FromContext(ctx)
 	lastevict := watcher.Spec.LastEviction
@@ -277,6 +289,7 @@ func unhandledEviction(ctx context.Context, watcher myappsv1.PDBWatcher) bool {
 		return false
 	}
 
+	
 	if lastevict == watcher.Status.LastEviction {
 		return false
 	}
