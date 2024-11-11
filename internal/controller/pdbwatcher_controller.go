@@ -70,6 +70,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	deploymentName := pdbWatcher.Spec.TargetName
 	if deploymentName == "" {
+		//move away from doing this. Have another controller that watches pdbs and creates/updates pdbwatchers
 		deploymentName, err := r.discoverDeployment(ctx, pdb) //move this out of thie controller to a controller that watches pdbs
 		if err != nil {
 			//better error on notfound
@@ -195,6 +196,8 @@ func (r *PDBWatcherReconciler) conflicts(ctx context.Context, pdbWatcher *myapps
 	return nil
 }
 
+//discoverDeployment is for lazy users who don't specify a targetName. Its just goin to pick the deployment owned by the first pod it finds 
+//matcing  
 func (r *PDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb *policyv1.PodDisruptionBudget) (string, error) {
 	logger := log.FromContext(ctx)
 	// Check if PDB overlaps with multiple deployments
@@ -209,7 +212,6 @@ func (r *PDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb *poli
 		return "", err // Error listing pods
 	}
 
-	deployments := []string{}
 	for _, pod := range podList.Items {
 		for _, ownerRef := range pod.OwnerReferences {
 			if ownerRef.Kind == "ReplicaSet" {
@@ -218,30 +220,20 @@ func (r *PDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb *poli
 				if err != nil {
 					return "", err // Error fetching ReplicaSet
 				}
+				
 
 				// Get the Deployment that owns this ReplicaSet
 				for _, rsOwnerRef := range replicaSet.OwnerReferences {
 					if rsOwnerRef.Kind == "Deployment" {
-						deployments = append(deployments, rsOwnerRef.Name)
+						logger.Info(fmt.Sprintf("Determined Deployment name: %s->%s", pdb.Name, rsOwnerRef.Name))
+						return rsOwnerRef.Name, nil
 					}
 				}
 			}
-			//todo handle stateful sets
+			//todo handle stateful sets? Too dangersous?
 		}
 	}
-
-	// If multiple deployments are found, log a warning and return an error
-	if len(deployments) > 1 {
-		r.Recorder.Event(pdb, corev1.EventTypeWarning, "MultipleDeployments", "PDB overlaps with multiple deployments") //should we event on pdb watcher?
-		return "", fmt.Errorf("PDB %s/%s overlaps with multiple deployments", pdb.Namespace, pdb.Name)
-	}
-
-	if len(deployments) == 0 {
-		return "", fmt.Errorf("PDB %s/%s overlaps with zero deployments", pdb.Namespace, pdb.Name)
-	}
-	// Log the deployment map and deployment name for debugging
-	logger.Info(fmt.Sprintf("Determined Deployment name: %s->%s", pdb.Name, deployments[0]))
-	return deployments[0], nil
+	return "", fmt.Errorf("PDB %s/%s overlaps with zero deployments", pdb.Namespace, pdb.Name)	
 }
 
 func (r *PDBWatcherReconciler) SetupWithManager(mgr ctrl.Manager) error {
