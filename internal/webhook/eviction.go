@@ -83,19 +83,23 @@ func (e *EvictionHandler) Handle(ctx context.Context, req admission.Request) adm
 
 	logger.Info("Found pdbwatcher", "name", applicablePDBWatcher.Name)
 
+	/* Can't do this because we might miss our last eviction
 	//only update if we're 1 minute since last eviction to avoid swarms.
-	//impolite to mutex here as it would block api server. Could have a single channel and channel readser updates
-	
-	evictionTime, err := time.Parse(time.RFC3339, applicablePDBWatcher.Spec.LastEviction .EvictionTime)
-	if err != nil {
-		logger.Error(err, "Failed to parse eviction time " + applicablePDBWatcher.Spec.LastEviction .EvictionTime)
-	} else {
-		if now.Sub(evictionTime) < time.Minute { //mak configurable in CRD  
-			logger.Info("Eviction logged successfully", "podName", req.Name, "evictionTime", currentEviction.EvictionTime)
-			return admission.Allowed("eviction ignored")
+	//impolite to mutex here as it would block api server. Could have a single channel and channel read updates
+
+	if applicablePDBWatcher.Spec.LastEviction.EvictionTime != "" {
+		evictionTime, err := time.Parse(time.RFC3339, applicablePDBWatcher.Spec.LastEviction.EvictionTime)
+		if err != nil {
+			logger.Error(err, "Failed to parse eviction time "+applicablePDBWatcher.Spec.LastEviction.EvictionTime)
+		} else {
+			if now.Sub(evictionTime) < time.Minute { //mak configurable in CRD
+				logger.Info("Eviction logged successfully", "podName", req.Name, "evictionTime", currentEviction.EvictionTime)
+				return admission.Allowed("eviction ignored")
+			}
 		}
 	}
-	
+	*/
+
 	applicablePDBWatcher.Spec.LastEviction = currentEviction
 
 	err = e.Client.Update(ctx, applicablePDBWatcher)
@@ -108,8 +112,6 @@ func (e *EvictionHandler) Handle(ctx context.Context, req admission.Request) adm
 	logger.Info("Eviction logged successfully", "podName", req.Name, "evictionTime", currentEviction.EvictionTime)
 	return admission.Allowed("eviction allowed")
 }
-
-
 
 // what the heck does this do
 func (e *EvictionHandler) InjectDecoder(d *admission.Decoder) error {
