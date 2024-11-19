@@ -143,11 +143,11 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if err != nil {
 			logger.Error(err, "failed to update deployment")
 			return ctrl.Result{}, err
-		}	
-		
+		}
+
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Scaled up Deployment %s/%s to %d replicas", target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
-	} else  if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
+	} else if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
 		//don't scale down immediately as eviction and scaledown might remove all good pods.
 		//instead give a cool off time?
 		evictionTime, err := time.Parse(time.RFC3339, pdbWatcher.Status.LastEviction.EvictionTime)
@@ -155,9 +155,11 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			logger.Error(err, "Failed to parse eviction time")
 			return ctrl.Result{}, err
 		}
+		cooldown := 10 * time.Second //this is trcky how long do we wate for eviction to proccess. Let pdbwatcher set this?
+		if time.Since(evictionTime) < cooldown {
 
-		if time.Since(evictionTime) < 10 * time.Second  { //this is trcky how long do we wate for eviction to proccess
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil //requeue but how long to wait?
+			logger.Info(fmt.Sprintf("Giving %s/%s cooldown of  %s after last eviction %s ", target.Obj().GetNamespace(), target.Obj().GetName(), cooldown, evictionTime))
+			return ctrl.Result{RequeueAfter: cooldown / 2}, nil
 		}
 
 		//okay we aren't at allowed disruptions Revert Target to the original state
@@ -180,7 +182,6 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		logger.Error(err, "Failed to update PDBWatcher status")
 		return ctrl.Result{}, err
 	}
-
 
 	return ctrl.Result{}, nil
 }
@@ -206,8 +207,8 @@ func (r *PDBWatcherReconciler) conflicts(ctx context.Context, pdbWatcher *myapps
 	return nil
 }
 
-//discoverDeployment is for lazy users who don't specify a targetName. Its just goin to pick the deployment owned by the first pod it finds 
-//matcing  
+// discoverDeployment is for lazy users who don't specify a targetName. Its just goin to pick the deployment owned by the first pod it finds
+// matcing
 func (r *PDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb *policyv1.PodDisruptionBudget) (string, error) {
 	logger := log.FromContext(ctx)
 	// Check if PDB overlaps with multiple deployments
@@ -230,7 +231,6 @@ func (r *PDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb *poli
 				if err != nil {
 					return "", err // Error fetching ReplicaSet
 				}
-				
 
 				// Get the Deployment that owns this ReplicaSet
 				for _, rsOwnerRef := range replicaSet.OwnerReferences {
@@ -243,7 +243,7 @@ func (r *PDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb *poli
 			//todo handle stateful sets? Too dangersous?
 		}
 	}
-	return "", fmt.Errorf("PDB %s/%s overlaps with zero deployments", pdb.Namespace, pdb.Name)	
+	return "", fmt.Errorf("PDB %s/%s overlaps with zero deployments", pdb.Namespace, pdb.Name)
 }
 
 func (r *PDBWatcherReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -265,8 +265,8 @@ func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 
 	surge := target.GetMaxSurge()
 	if surge.Type == intstr.Int {
 		return minrepicas
-	} 
-	
+	}
+
 	if surge.Type == intstr.String {
 		percentageStr := strings.TrimSuffix(surge.StrVal, "%")
 		percentage, err := strconv.Atoi(percentageStr)
@@ -274,14 +274,14 @@ func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 
 			//todo add name?
 			log.FromContext(ctx).Error(err, "invalid surge")
 		}
-		return minrepicas + int32(math.Ceil((float64(minrepicas) * float64(percentage)) / 100.0))
-	} 
-	
+		return minrepicas + int32(math.Ceil((float64(minrepicas)*float64(percentage))/100.0))
+	}
+
 	panic("must be string or int")
 
 }
 
-//should these be guids rather than times?
+// should these be guids rather than times?
 func unhandledEviction(ctx context.Context, watcher myappsv1.PDBWatcher) bool {
 	logger := log.FromContext(ctx)
 	lastevict := watcher.Spec.LastEviction
@@ -289,7 +289,6 @@ func unhandledEviction(ctx context.Context, watcher myappsv1.PDBWatcher) bool {
 		return false
 	}
 
-	
 	if lastevict == watcher.Status.LastEviction {
 		return false
 	}
