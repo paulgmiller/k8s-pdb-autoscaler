@@ -155,7 +155,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(1))) // Change as needed to verify scaling
 		})
 
-		It("should deal with an eviction", func() {
+		It("should deal with an eviction when allowedDisruptions == 0", func() {
 			By("scaling up on reconcile")
 			controllerReconciler := &PDBWatcherReconciler{
 				Client: k8sClient,
@@ -196,7 +196,77 @@ var _ = Describe("PDBWatcher Controller", func() {
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(2))) // Change as needed to verify scaling
 		})
 
-		//TODO scaledown
+		//should this be merged with above?
+		It("should deal with an eviction when allowedDisruptions > 0 ", func() {
+			By("waiting on first on reconcile")
+			controllerReconciler := &PDBWatcherReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			// simulate previously scaled up on an eviction
+			deployment := &appsv1.Deployment{}
+			err := k8sClient.Get(ctx, deploymentNamespacedName, deployment)
+			Expect(err).NotTo(HaveOccurred())
+			deployment.Spec.Replicas = int32Ptr(2)
+			Expect(k8sClient.Update(ctx, deployment)).To(Succeed())
+
+			// Log an eviction (webhook would do this in e2e)
+			pdbwatcher := &v1.PDBWatcher{}
+			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
+			Expect(err).NotTo(HaveOccurred())
+			pdbwatcher.Spec.LastEviction = v1.Eviction{
+				PodName:      "somepod", //
+				EvictionTime: time.Now().Format(time.RFC3339),
+			}
+			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
+			pdbwatcher.Status.MinReplicas = 1
+			pdbwatcher.Status.TargetGeneration = deployment.Generation
+			Expect(k8sClient.Status().Update(ctx, pdbwatcher)).To(Succeed())
+
+			//have the pdb show it
+			pdb := &policyv1.PodDisruptionBudget{}
+			err = k8sClient.Get(ctx, typeNamespacedName, pdb)
+			Expect(err).NotTo(HaveOccurred())
+			pdb.Status.DisruptionsAllowed = 1
+			Expect(k8sClient.Status().Update(ctx, pdb)).To(Succeed())
+
+			//first reconcile should do demure.
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+
+			// Deployment is not changed yet
+			err = k8sClient.Get(ctx, deploymentNamespacedName, deployment)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*deployment.Spec.Replicas).To(Equal(int32(2))) // Change as needed to verify scaling
+
+			// Verify PDBWatcher resource
+			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pdbwatcher.Spec.LastEviction.PodName).To(Equal("somepod"))
+			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).To(Equal(pdbwatcher.Spec.LastEviction.EvictionTime))
+
+			By("scaling down after cooldown")
+			//okay lets say the eviction is older though
+			//TODO make cooldown const/configurable
+			pdbwatcher.Spec.LastEviction.EvictionTime = time.Now().Add(-15 * time.Second).Format(time.RFC3339)
+			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
+
+			//second reconcile should scaledown.
+			result, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+
+			// Deployment scaled down to 1
+			err = k8sClient.Get(ctx, deploymentNamespacedName, deployment)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*deployment.Spec.Replicas).To(Equal(int32(1))) // Change as needed to verify scaling
+		})
 
 		//TODO reset on deployment change
 		It("should deal with deployment spec change", func() {
@@ -246,6 +316,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 		})
 
 		//TODO do noting on old eviction
+		//TODO test a statefulset.
 	})
 })
 
