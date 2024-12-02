@@ -128,7 +128,10 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Scaled up Deployment %s/%s to %d replicas", target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
-	} else if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
+		return ctrl.Result{}, r.updateStatus(ctx, pdbWatcher, target)
+	}
+
+	if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
 		//don't scale down immediately as eviction and scaledown might remove all good pods.
 		//instead give a cool off time?
 		evictionTime, err := time.Parse(time.RFC3339, pdbWatcher.Spec.LastEviction.EvictionTime)
@@ -152,19 +155,17 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Reverted Deployment %s/%s to %d replicas", target.Obj().GetNamespace(), target.Obj().GetName(), target.GetReplicas()))
+		return ctrl.Result{}, r.updateStatus(ctx, pdbWatcher, target)
 	}
 	// else log nothing to do or too noisy?
 
-	// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
+	return ctrl.Result{}, r.updateStatus(ctx, pdbWatcher, target)
+}
+
+func (r *PDBWatcherReconciler) updateStatus(ctx context.Context, pdbWatcher *myappsv1.PDBWatcher, target Surger) error {
 	pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
 	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
-	err = r.Status().Update(ctx, pdbWatcher)
-	if err != nil {
-		logger.Error(err, "Failed to update PDBWatcher status")
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, nil
+	return r.Status().Update(ctx, pdbWatcher)
 }
 
 func (r *PDBWatcherReconciler) SetupWithManager(mgr ctrl.Manager) error {
