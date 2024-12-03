@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	myappsv1 "github.com/paulgmiller/k8s-pdb-autoscaler/api/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -21,8 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
-	myappsv1 "github.com/paulgmiller/k8s-pdb-autoscaler/api/v1"
 )
 
 // PDBWatcherReconciler reconciles a PDBWatcher object
@@ -35,9 +34,9 @@ type PDBWatcherReconciler struct {
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers/finalizers,verbs=update
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;update
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;update;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;update
-// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list
+// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;create;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list
 
 func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
