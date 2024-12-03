@@ -57,31 +57,30 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	err = r.Get(ctx, types.NamespacedName{Name: pdbWatcher.Name, Namespace: pdbWatcher.Namespace}, pdb)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("pdb watcher does not have corresponding pdb: %w", err) // Error fetching PDB
+			//TODO consdier status conditions for errors like this https://book.kubebuilder.io/reference/good-practices#why-you-should-adopt-status-conditions
+			logger.Error(err, "no matching pdb", "namespace", pdbWatcher.Namespace, "name", pdbWatcher.Name)
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	if pdbWatcher.Spec.TargetName == "" {
-		//better error on notfound
-		return ctrl.Result{}, fmt.Errorf("PDBWatcher %s/%s has no targetName", pdbWatcher.Namespace, pdbWatcher.Name)
+		//TODO status condition
+		logger.Error(err, "no specified target name %s", pdbWatcher.Spec.TargetName)
+		return ctrl.Result{}, nil
 	}
 
 	// Fetch the Deployment or Statefulset
+	// TODO enum validation https://book.kubebuilder.io/reference/generating-crd#validation
 	target, err := GetSurger(pdbWatcher.Spec.TargetKind)
 	if err != nil {
-		return ctrl.Result{}, err
+		logger.Error(err, "invalid target kind", "kind", pdbWatcher.Spec.TargetKind)
+		return ctrl.Result{}, nil
 	}
 	err = r.Get(ctx, types.NamespacedName{Name: pdbWatcher.Spec.TargetName, Namespace: pdbWatcher.Namespace}, target.Obj())
 	if err != nil {
 		if errors.IsNotFound(err) {
-			//blank out deployment and try again?
-			pdbWatcher.Spec.TargetName = ""
-			err = r.Update(ctx, pdbWatcher)
-			if err != nil {
-				logger.Error(err, "Failed to clear PDBWatcher deployment")
-				return ctrl.Result{}, err
-			}
+			logger.Error(err, "pdb watcher target does not exist", "kind", pdbWatcher.Spec.TargetKind, "targetname", pdbWatcher.Spec.TargetName) // Error fetching PDB
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err // Error fetching Deployment
