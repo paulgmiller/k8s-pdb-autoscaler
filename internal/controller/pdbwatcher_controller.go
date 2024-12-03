@@ -138,7 +138,15 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Check if there are recent evictions
 	if !unhandledEviction(ctx, *pdbWatcher) {
 		logger.Info("No unhandled eviction ", "pdbname", pdb.Name)
-		return ctrl.Result{}, nil
+		meta.SetStatusCondition(&pdbWatcher.Status.Conditions, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			Reason:             "Reconciled",
+			Message:            "no unhandled eviction",
+			LastTransitionTime: metav1.Now(),
+		})
+		meta.RemoveStatusCondition(&pdbWatcher.Status.Conditions, "Degraded")
+		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
 	}
 
 	// Check the DisruptionsAllowed field

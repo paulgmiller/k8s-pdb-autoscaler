@@ -142,6 +142,9 @@ var _ = Describe("PDBWatcher Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pdbwatcher.Status.MinReplicas).To(Equal(int32(1)))
 			Expect(pdbwatcher.Status.TargetGeneration).ToNot(BeZero())
+			Expect(pdbwatcher.Status.Conditions).To(HaveLen(1))
+			Expect(pdbwatcher.Status.Conditions[0].Type).To(Equal("Ready"))
+			Expect(pdbwatcher.Status.Conditions[0].Reason).To(Equal("DeploymentSpecChange"))
 
 			// run it twice so we hit unhandled eviction == false
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -154,6 +157,14 @@ var _ = Describe("PDBWatcher Controller", func() {
 			err = k8sClient.Get(ctx, deploymentNamespacedName, deployment)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(1))) // Change as needed to verify scaling
+
+			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pdbwatcher.Status.MinReplicas).To(Equal(int32(1)))
+			Expect(pdbwatcher.Status.TargetGeneration).ToNot(BeZero())
+			Expect(pdbwatcher.Status.Conditions).To(HaveLen(1))
+			Expect(pdbwatcher.Status.Conditions[0].Type).To(Equal("Ready"))
+			Expect(pdbwatcher.Status.Conditions[0].Reason).To(Equal("Reconciled"))
 		})
 
 		It("should deal with an eviction when allowedDisruptions == 0", func() {
