@@ -184,7 +184,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			pdbwatcher := &v1.PDBWatcher{}
 			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
 			Expect(err).NotTo(HaveOccurred())
-			pdbwatcher.Spec.LastEviction = &v1.Eviction{
+			pdbwatcher.Spec.LastEviction = v1.Eviction{
 				PodName:      "somepod", //
 				EvictionTime: metav1.Now(),
 			}
@@ -263,7 +263,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			pdbwatcher := &v1.PDBWatcher{}
 			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
 			Expect(err).NotTo(HaveOccurred())
-			pdbwatcher.Spec.LastEviction = &v1.Eviction{
+			pdbwatcher.Spec.LastEviction = v1.Eviction{
 				PodName:      "somepod", //
 				EvictionTime: metav1.Now(),
 			}
@@ -306,7 +306,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			pdbwatcher := &v1.PDBWatcher{}
 			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
 			Expect(err).NotTo(HaveOccurred())
-			pdbwatcher.Spec.LastEviction = &v1.Eviction{
+			pdbwatcher.Spec.LastEviction = v1.Eviction{
 				PodName:      "somepod", //
 				EvictionTime: metav1.Now(),
 			}

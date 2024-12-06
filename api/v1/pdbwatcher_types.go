@@ -6,21 +6,21 @@ import (
 
 // EvictionLog defines a log entry for pod evictions
 type Eviction struct {
-	PodName      string      `json:"podName"`
-	EvictionTime metav1.Time `json:"evictionTime"`
+	PodName      string      `json:"podName,omitempty"`
+	EvictionTime metav1.Time `json:"evictionTime,omitempty"`
 }
 
 // PDBWatcherSpec defines the desired state of PDBWatcher
 type PDBWatcherSpec struct {
 	//todo make this mirror horizontalpodautoscaler's target reference
-	TargetName   string    `json:"targetName"`
-	TargetKind   string    `json:"targetKind"` //deployment or statefulset (anything with an update statedgy)
-	LastEviction *Eviction `json:"lastEviction,omitempty"`
+	TargetName   string   `json:"targetName"`
+	TargetKind   string   `json:"targetKind"` //deployment or statefulset (anything with an update statedgy)
+	LastEviction Eviction `json:"lastEviction,omitempty"`
 }
 
 // PDBWatcherStatus defines the observed state of PDBWatcher
 type PDBWatcherStatus struct {
-	LastEviction     *Eviction          `json:"lastEviction,omitempty"` //this is the last one the controller has processed.
+	LastEviction     Eviction           `json:"lastEviction,omitempty"` //this is the last one the controller has processed.
 	MinReplicas      int32              `json:"minReplicas"`            // Minimum number of replicas to maintain
 	TargetGeneration int64              `json:"deploymentGeneration"`   // generation (spec hash) of deployment or statefulse
 	Conditions       []metav1.Condition `json:"conditions,omitempty"`

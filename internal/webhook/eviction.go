@@ -98,7 +98,7 @@ func (e *EvictionHandler) Handle(ctx context.Context, req admission.Request) adm
 	}
 	*/
 
-	applicablePDBWatcher.Spec.LastEviction = &currentEviction
+	applicablePDBWatcher.Spec.LastEviction = currentEviction
 
 	err = e.Client.Update(ctx, applicablePDBWatcher)
 	if err != nil {

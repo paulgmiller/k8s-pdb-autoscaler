@@ -152,8 +152,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
 	pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
-	newEviction := *pdbWatcher.Spec.LastEviction
-	pdbWatcher.Status.LastEviction = &newEviction //we could still keep a log here if thats useful
+	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
 	ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
 	return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher) //should we go rety in case there is also an eviction or just wait till the next eviction
 }
@@ -218,11 +217,8 @@ func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 
 // should these be guids rather than times?
 func unhandledEviction(watcher myappsv1.PDBWatcher) bool {
 	lastEvict := watcher.Spec.LastEviction
-	if lastEvict == nil {
-		return false
-	}
 
-	if watcher.Status.LastEviction != nil && *lastEvict == *watcher.Status.LastEviction {
+	if lastEvict == watcher.Status.LastEviction {
 		return false
 	}
 

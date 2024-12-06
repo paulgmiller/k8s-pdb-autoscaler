@@ -47,9 +47,6 @@ spec:
                     type: string
                   podName:
                     type: string
-                required:
-                - evictionTime
-                - podName
                 type: object
               targetKind:
                 type: string
@@ -144,9 +141,6 @@ spec:
                     type: string
                   podName:
                     type: string
-                required:
-                - evictionTime
-                - podName
                 type: object
               minReplicas:
                 format: int32
