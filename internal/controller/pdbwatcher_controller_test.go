@@ -184,9 +184,9 @@ var _ = Describe("PDBWatcher Controller", func() {
 			pdbwatcher := &v1.PDBWatcher{}
 			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
 			Expect(err).NotTo(HaveOccurred())
-			pdbwatcher.Spec.LastEviction = v1.Eviction{
+			pdbwatcher.Spec.LastEviction = &v1.Eviction{
 				PodName:      "somepod", //
-				EvictionTime: time.Now().Format(time.RFC3339),
+				EvictionTime: metav1.Now(),
 			}
 			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
 
@@ -263,9 +263,9 @@ var _ = Describe("PDBWatcher Controller", func() {
 			pdbwatcher := &v1.PDBWatcher{}
 			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
 			Expect(err).NotTo(HaveOccurred())
-			pdbwatcher.Spec.LastEviction = v1.Eviction{
+			pdbwatcher.Spec.LastEviction = &v1.Eviction{
 				PodName:      "somepod", //
-				EvictionTime: time.Now().Format(time.RFC3339),
+				EvictionTime: metav1.Now(),
 			}
 			pdbwatcher.Spec.TargetKind = "statefulset"
 			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
@@ -306,9 +306,9 @@ var _ = Describe("PDBWatcher Controller", func() {
 			pdbwatcher := &v1.PDBWatcher{}
 			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
 			Expect(err).NotTo(HaveOccurred())
-			pdbwatcher.Spec.LastEviction = v1.Eviction{
+			pdbwatcher.Spec.LastEviction = &v1.Eviction{
 				PodName:      "somepod", //
-				EvictionTime: time.Now().Format(time.RFC3339),
+				EvictionTime: metav1.Now(),
 			}
 			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
 			pdbwatcher.Status.MinReplicas = 1
@@ -343,7 +343,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			By("scaling down after cooldown")
 			//okay lets say the eviction is older though
 			//TODO make cooldown const/configurable
-			pdbwatcher.Spec.LastEviction.EvictionTime = time.Now().Add(-15 * time.Second).Format(time.RFC3339)
+			pdbwatcher.Spec.LastEviction.EvictionTime = metav1.NewTime(time.Now().Add(-15 * time.Second))
 			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
 
 			//second reconcile should scaledown.
