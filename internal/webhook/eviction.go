@@ -3,7 +3,6 @@ package webhook
 import (
 	"context"
 	"net/http"
-	"time"
 
 	pdbautoscaler "github.com/paulgmiller/k8s-pdb-autoscaler/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -99,9 +98,9 @@ func (e *EvictionHandler) Handle(ctx context.Context, req admission.Request) adm
 	}
 
 	// want to rate limit on mass evictions but also if we slow down too much we may miss last eviction and not scale down.
-	if applicablePDBWatcher.Spec.LastEviction.EvictionTime.Time.Sub(currentEviction.EvictionTime.Time) < time.Second {
-		return admission.Allowed("eviction allowed")
-	}
+	//if applicablePDBWatcher.Spec.LastEviction.EvictionTime.Time.Sub(currentEviction.EvictionTime.Time) < time.Second {
+	//	return admission.Allowed("eviction allowed")
+	//}
 
 	applicablePDBWatcher.Spec.LastEviction = currentEviction
 
