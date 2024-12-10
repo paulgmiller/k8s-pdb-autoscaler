@@ -90,7 +90,7 @@ func (e *EvictionHandler) Handle(ctx context.Context, req admission.Request) adm
 		Reason:  "EvictionAttempt",
 		Message: "eviction attempt recorded by eviction webhook",
 	})
-	if !updatedpod {
+	if updatedpod {
 		if err := e.Client.Status().Update(ctx, podObj); err != nil {
 			logger.Error(err, "Error: Unable to update Pod status")
 			//don't fail yet still want to try and update the pdbwatcher

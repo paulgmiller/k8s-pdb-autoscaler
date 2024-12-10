@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
@@ -26,7 +27,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 
 	ctx := context.Background()
 	typeNamespacedName := types.NamespacedName{Name: resourceName, Namespace: namespace}
-	//podNamespacedName := types.NamespacedName{Name: podName, Namespace: namespace}
+	podNamespacedName := types.NamespacedName{Name: podName, Namespace: namespace}
 
 	Context("When reconciling a resource", func() {
 
@@ -66,12 +67,23 @@ var _ = Describe("PDBWatcher Controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+			pod.Status = corev1.PodStatus{ // Use corev1.PodStatus
+				Phase: corev1.PodRunning,
+				Conditions: []corev1.PodCondition{ // Use corev1.PodCondition
+					{
+						Type:   corev1.PodReady,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 
-			By("creating a PDB resohurce")
+			By("creating a PDB resource")
 			pdb := &policyv1.PodDisruptionBudget{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName,
-					Namespace: namespace,
+					Name:       resourceName,
+					Namespace:  namespace,
+					Generation: 1,
 				},
 				Spec: policyv1.PodDisruptionBudgetSpec{
 					MinAvailable: &intstr.IntOrString{
@@ -83,11 +95,16 @@ var _ = Describe("PDBWatcher Controller", func() {
 						},
 					},
 				},
-				Status: policyv1.PodDisruptionBudgetStatus{
-					DisruptionsAllowed: 0,
-				},
 			}
 			Expect(k8sClient.Create(ctx, pdb)).To(Succeed())
+			pdb.Status = policyv1.PodDisruptionBudgetStatus{
+				DisruptionsAllowed: 0,
+				CurrentHealthy:     1,
+				DesiredHealthy:     1,
+				ExpectedPods:       1,
+				ObservedGeneration: 1,
+			}
+			Expect(k8sClient.Status().Update(ctx, pdb)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -101,11 +118,18 @@ var _ = Describe("PDBWatcher Controller", func() {
 			}
 
 			deleteResource(&v1.PDBWatcher{ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: namespace}})
-			//deleteResource(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: namespace}})
+			deleteResource(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: namespace}})
 			deleteResource(&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: namespace}})
 		})
 
 		It("should handle an eviction", func() {
+
+			By("checking pod  start ")
+			pod := &corev1.Pod{}
+			err := k8sClient.Get(ctx, podNamespacedName, pod)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pod.Status.Conditions).To(HaveLen(1))
+			Expect(pod.Status.Conditions[0].Type).To(Equal(corev1.PodReady))
 
 			clientset, err := kubernetes.NewForConfig(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -116,7 +140,8 @@ var _ = Describe("PDBWatcher Controller", func() {
 					Namespace: namespace,
 				},
 			})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsTooManyRequests(err)).To(BeTrue())
 			By("updating pdb watcher ")
 
 			pdbwatcher := &v1.PDBWatcher{}
@@ -125,12 +150,14 @@ var _ = Describe("PDBWatcher Controller", func() {
 			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).ToNot(BeZero())
 			Expect(pdbwatcher.Spec.LastEviction.PodName).To(Equal(podName))
 
-			/*By("checking pod condition ")
-			pod := &corev1.Pod{}
+			By("checking pod condition ")
+
 			err = k8sClient.Get(ctx, podNamespacedName, pod)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(pod.Status.Conditions).To(HaveLen(1))
-			Expect(pod.Status.Conditions[0].Type).To(Equal(corev1.DisruptionTarget))*/
+			Expect(pod.Status.Conditions).To(HaveLen(2))
+			//First is still ready ignore it
+			Expect(pod.Status.Conditions[1].Type).To(Equal(corev1.DisruptionTarget))
+
 		})
 	})
 })
