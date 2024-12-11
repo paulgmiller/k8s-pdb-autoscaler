@@ -156,7 +156,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
-		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction
 		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled by scale down")
 		logger.Info(fmt.Sprintf("Reverted %s %s/%s to %d replicas", pdbWatcher.Spec.TargetKind, target.Obj().GetNamespace(), target.Obj().GetName(), target.GetReplicas()))
 		//BUG if we fail here we'll not have an updated TargetGeneration and will reset.
@@ -164,9 +164,9 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	}
 
-	//nothing to do but make sure we're not in
-	//we can't end up here degraded can we? any change to spec will hi reset path since targetgeneration can't be right
-	return ctrl.Result{}, nil
+	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction
+	ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled with no actio")
+	return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
 }
 
 func isDegraded(conditions []metav1.Condition) bool {
