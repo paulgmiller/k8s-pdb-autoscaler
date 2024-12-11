@@ -128,7 +128,16 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Scaled up %s  %s/%s to %d replicas", pdbWatcher.Spec.TargetKind, target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
-	} else if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
+		// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
+		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
+		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled by scaleup")
+		//BUG if we fail here we'll not have an updated TargetGeneration and will reset.
+		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
+	}
+
+	//we're above replicas but NOT at allowed dirupotiosn == 0
+	if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
 		//don't scale down immediately as eviction and scaledown might remove all good pods.
 		//instead give a cool off time?
 		cooldown := 10 * time.Second //this is trcky how long do we wate for eviction to process. Let pdbwatcher set this?
@@ -146,15 +155,27 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		// Log the scaling action
+		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
+		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled by scale down")
 		logger.Info(fmt.Sprintf("Reverted %s %s/%s to %d replicas", pdbWatcher.Spec.TargetKind, target.Obj().GetNamespace(), target.Obj().GetName(), target.GetReplicas()))
-	}
-	// else log nothing to do or too noisy?
+		//BUG if we fail here we'll not have an updated TargetGeneration and will reset.
+		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
 
-	// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
-	pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
-	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
-	ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
-	return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher) //should we go rety in case there is also an eviction or just wait till the next eviction
+	}
+
+	//nothing to do but make sure we're not in
+	//we can't end up here degraded can we? any change to spec will hi reset path since targetgeneration can't be right
+	return ctrl.Result{}, nil
+}
+
+func isDegraded(conditions []metav1.Condition) bool {
+	for _, c := range conditions {
+		if c.Type == "Degraded" && c.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 func ready(conditions *[]metav1.Condition, reason string, message string) {
