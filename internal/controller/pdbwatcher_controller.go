@@ -53,8 +53,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		return ctrl.Result{}, err // Error fetching PDBWatcher
 	}
-
-	//TODO deep copy pdbWatcher and other things we get and are going to modify?
+	pdbWatcher = pdbWatcher.DeepCopy() //don't mutate teh cache
 
 	// Fetch the PDB using a 1:1 name mapping
 	pdb := &policyv1.PodDisruptionBudget{}
@@ -94,7 +93,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Check if the resource version has changed or if it's empty (initial state)
 	if pdbWatcher.Status.TargetGeneration == 0 || pdbWatcher.Status.TargetGeneration != target.Obj().GetGeneration() {
-		logger.Info("Target resource version changed reseting min replicas")
+		logger.Info("Target resource version changed reseting min replicas", "kind", pdbWatcher.Spec.TargetKind, "targetname", pdbWatcher.Spec.TargetName)
 		// The resource version has changed, which means someone else has modified the Target.
 		// To avoid conflicts, we update our status to reflect the new state and avoid making further changes.
 		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
