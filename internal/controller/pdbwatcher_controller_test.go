@@ -335,7 +335,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+			Expect(result.RequeueAfter).To(Equal(cooldown))
 
 			// Deployment is not changed yet
 			err = k8sClient.Get(ctx, deploymentNamespacedName, deployment)
@@ -351,7 +351,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			By("scaling down after cooldown")
 			//okay lets say the eviction is older though
 			//TODO make cooldown const/configurable
-			pdbwatcher.Spec.LastEviction.EvictionTime = metav1.NewTime(time.Now().Add(-15 * time.Second))
+			pdbwatcher.Spec.LastEviction.EvictionTime = metav1.NewTime(time.Now().Add(-2 * cooldown))
 			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
 
 			//second reconcile should scaledown.
