@@ -118,7 +118,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	//if we're not scaled up and theres new evictions we haven't proceesed
 	if pdb.Status.DisruptionsAllowed == 0 && target.GetReplicas() == pdbWatcher.Status.MinReplicas {
 		//What if the evict went through because the pod being evicted wasn't ready anyways? Handle that in webhook or here?
-
+		// TODO later. Surge more slowly based on number of evitions (need to move back to capturing them all)
 		logger.Info(fmt.Sprintf("No disruptions allowed for %s and recent eviction attempting to scale up", pdb.Name))
 		newReplicas := calculateSurge(ctx, target, pdbWatcher.Status.MinReplicas)
 		target.SetReplicas(newReplicas)
@@ -132,23 +132,26 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		logger.Info(fmt.Sprintf("Scaled up %s  %s/%s to %d replicas", pdbWatcher.Spec.TargetKind, target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
 		// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
 		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
-		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
-		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
-		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
+		//pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction with scale up")
+		return ctrl.Result{RequeueAfter: cooldown}, r.Status().Update(ctx, pdbWatcher)
+	}
+
+	//what if we're allowed disruptions >0 and minreplicas == replicas? Could argue that we should mark the eviction as handled
+	//BUT maybe PDB is slow to update? so just letting it requeue anyways
+
+	//Cool down time makes sure we're not still getting more evictions
+	//we could substantially reduce this if we looked at pods and knew that none remaining (not already evicted) had been an eviction target but that means tracking more data in pdbwatcher
+	// or using pod conditons which we're not doing.....yet
+	//instead give a cool off time?
+	if time.Since(pdbWatcher.Spec.LastEviction.EvictionTime.Time) < cooldown {
+		logger.Info(fmt.Sprintf("Giving %s/%s cooldown of  %s after last eviction %s ", target.Obj().GetNamespace(), target.Obj().GetName(), cooldown, pdbWatcher.Spec.LastEviction.EvictionTime))
+		return ctrl.Result{RequeueAfter: cooldown}, nil
 	}
 
 	//still at a scaled out state check if we can scale back down
 	//BUG we miss if a evict turns into a delete. Do we have to watch pods for that
-	if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
-		//Cool down time makes sure we're not still getting more evictions
-		//we could substantially reduce this if we looked at pods and knew that none remaining (not already evicted) had been an eviction target but that means tracking more data in pdbwatcher
-		// or using pod conditons which we're not doing.....yet
-		//instead give a cool off time?
-		if time.Since(pdbWatcher.Spec.LastEviction.EvictionTime.Time) < cooldown {
-
-			logger.Info(fmt.Sprintf("Giving %s/%s cooldown of  %s after last eviction %s ", target.Obj().GetNamespace(), target.Obj().GetName(), cooldown, pdbWatcher.Spec.LastEviction.EvictionTime))
-			return ctrl.Result{RequeueAfter: cooldown}, nil
-		}
+	if target.GetReplicas() > pdbWatcher.Status.MinReplicas { //would we ever be below min replicas
 
 		//okay we aren't at allowed disruptions Revert Target to the original state
 		target.SetReplicas(pdbWatcher.Status.MinReplicas)
@@ -162,13 +165,13 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
 		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
 		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
-		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
+		ready(&pdbWatcher.Status.Conditions, "Reconciled", "evictions hit cooldown so scaled down")
 		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
 	}
 
-	//We might get here if a eviction that caused a scale up was followed by a delete which we missed
+	//could get here if a scale up/down was not needed because we never hit allowed diruptios == 0.
 	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
-	ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
+	ready(&pdbWatcher.Status.Conditions, "Reconciled", "last eviction did not need scaling")
 	return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher) //should we go rety in case there is also an eviction or just wait till the next eviction
 }
 
