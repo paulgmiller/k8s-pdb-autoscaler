@@ -32,6 +32,8 @@ type PDBWatcherReconciler struct {
 	Recorder record.EventRecorder
 }
 
+const cooldown = 1 * time.Minute
+
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers/finalizers,verbs=update
@@ -106,15 +108,15 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Log current state before checks
 	logger.Info(fmt.Sprintf("Checking PDB for %s: DisruptionsAllowed=%d, MinReplicas=%d", pdb.Name, pdb.Status.DisruptionsAllowed, pdbWatcher.Status.MinReplicas))
 
-	// Check if there are recent evictions
-	if !unhandledEviction(*pdbWatcher) {
+	// Have we processed all evictions okay don't do anything else
+	if pdbWatcher.Spec.LastEviction == pdbWatcher.Status.LastEviction {
 		logger.Info("No unhandled eviction ", "pdbname", pdb.Name)
 		ready(&pdbWatcher.Status.Conditions, "Reconciled", "no unhandled eviction")
 		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
 	}
 
-	// Check the DisruptionsAllowed field
-	if pdb.Status.DisruptionsAllowed == 0 {
+	//if we're not scaled up and theres new evictions we haven't proceesed
+	if pdb.Status.DisruptionsAllowed == 0 && target.GetReplicas() == pdbWatcher.Status.MinReplicas {
 		//What if the evict went through because the pod being evicted wasn't ready anyways? Handle that in webhook or here?
 
 		logger.Info(fmt.Sprintf("No disruptions allowed for %s and recent eviction attempting to scale up", pdb.Name))
@@ -128,14 +130,24 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Scaled up %s  %s/%s to %d replicas", pdbWatcher.Spec.TargetKind, target.Obj().GetNamespace(), target.Obj().GetName(), newReplicas))
-	} else if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
-		//don't scale down immediately as eviction and scaledown might remove all good pods.
+		// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
+		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
+		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
+		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
+	}
+
+	//still at a scaled out state check if we can scale back down
+	//BUG we miss if a evict turns into a delete. Do we have to watch pods for that
+	if target.GetReplicas() != pdbWatcher.Status.MinReplicas {
+		//Cool down time makes sure we're not still getting more evictions
+		//we could substantially reduce this if we looked at pods and knew that none remaining (not already evicted) had been an eviction target but that means tracking more data in pdbwatcher
+		// or using pod conditons which we're not doing.....yet
 		//instead give a cool off time?
-		cooldown := 10 * time.Second //this is trcky how long do we wate for eviction to process. Let pdbwatcher set this?
 		if time.Since(pdbWatcher.Spec.LastEviction.EvictionTime.Time) < cooldown {
 
 			logger.Info(fmt.Sprintf("Giving %s/%s cooldown of  %s after last eviction %s ", target.Obj().GetNamespace(), target.Obj().GetName(), cooldown, pdbWatcher.Spec.LastEviction.EvictionTime))
-			return ctrl.Result{RequeueAfter: cooldown / 2}, nil
+			return ctrl.Result{RequeueAfter: cooldown}, nil
 		}
 
 		//okay we aren't at allowed disruptions Revert Target to the original state
@@ -147,11 +159,14 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Log the scaling action
 		logger.Info(fmt.Sprintf("Reverted %s %s/%s to %d replicas", pdbWatcher.Spec.TargetKind, target.Obj().GetNamespace(), target.Obj().GetName(), target.GetReplicas()))
+		// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
+		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
+		pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
+		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
+		return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher)
 	}
-	// else log nothing to do or too noisy?
 
-	// Save ResourceVersion to PDBWatcher status this will cause another reconcile.
-	pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
+	//We might get here if a eviction that caused a scale up was followed by a delete which we missed
 	pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
 	ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction handled")
 	return ctrl.Result{}, r.Status().Update(ctx, pdbWatcher) //should we go rety in case there is also an eviction or just wait till the next eviction
@@ -211,15 +226,4 @@ func calculateSurge(ctx context.Context, target Surger, minrepicas int32) int32 
 
 	panic("must be string or int")
 
-}
-
-// should these be guids rather than times?
-func unhandledEviction(watcher myappsv1.PDBWatcher) bool {
-	lastEvict := watcher.Spec.LastEviction
-
-	if lastEvict == watcher.Status.LastEviction {
-		return false
-	}
-
-	return time.Since(lastEvict.EvictionTime.Time) < 5*time.Minute //TODO let user set in spec
 }
