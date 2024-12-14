@@ -83,7 +83,6 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			err = r.Get(ctx, types.NamespacedName{Name: pdbWatcher.Name, Namespace: pdbWatcher.Namespace}, pdb)
 			if err != nil {
 				if errors.IsNotFound(err) {
-					degraded(&pdbWatcher.Status.Conditions, "NoPdb", "PDB of same name not found")
 					logger.Error(err, "no matching pdb", "namespace", pdbWatcher.Namespace, "name", pdbWatcher.Name)
 					continue
 				}
@@ -122,7 +121,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 
 		applicablePDBWatcher.Spec.LastEviction = pdbautoscaler.Eviction{
-			PodName:      req.Name,
+			PodName:      pod.Name,
 			EvictionTime: metav1.Now(),
 		}
 		if err := r.Update(ctx, applicablePDBWatcher); err != nil {
