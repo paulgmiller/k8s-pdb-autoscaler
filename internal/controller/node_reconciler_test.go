@@ -178,6 +178,47 @@ var _ = Describe("Node Controller", func() {
 			Expect(pod.Status.Conditions[1].Type).To(Equal(corev1.DisruptionTarget))
 
 		})
+
+		It("should handle cordon with no targetable pod", func() {
+			nodeReconciler := &NodeReconciler{
+				Client: k8sClient,
+				Scheme: scheme.Scheme,
+			}
+			_, err := nodeReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: nodeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			pod := &corev1.Pod{}
+			err = k8sClient.Get(ctx, podNamespacedName, pod)
+			Expect(err).NotTo(HaveOccurred())
+			pod.Labels = map[string]string{
+				"app": "notexample",
+			}
+			err = k8sClient.Update(ctx, pod)
+			Expect(err).NotTo(HaveOccurred())
+
+			node := &corev1.Node{}
+			err = k8sClient.Get(ctx, nodeNamespacedName, node)
+			Expect(err).NotTo(HaveOccurred())
+			node.Spec.Unschedulable = true
+
+			err = k8sClient.Update(ctx, node)
+			Expect(err).NotTo(HaveOccurred())
+			result, err := nodeReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: nodeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+
+			By("checking pod condition ")
+			err = k8sClient.Get(ctx, podNamespacedName, pod)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pod.Status.Conditions).To(HaveLen(1))
+			//First is still ready ignore it
+			Expect(pod.Status.Conditions[0].Type).To(Equal(corev1.PodReady))
+
+		})
 	})
 })
 

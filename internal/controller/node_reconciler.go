@@ -60,15 +60,13 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if len(podlist.Items) == 0 {
-		logger.Info("No pods on node", "name", node.Name)
-	}
 	podchanged := false
 	for _, pod := range podlist.Items {
-		// TODO cache the pdbs and pdbwatchers in each namespace ratehr than list on each pod?
-		// But also parallelize per namespace?
-		// TODO skip daemonset pods?
-		logger.Info("Looking at pod", "name", node.Name, "podname", pod.Name)
+		// TODO group pods by namespace to share list/get of pdbwatchers/pdbs
+		// Also  could do this to avoid list/llooku up but need to measure if either helps
+		//if !possibleTarget(pod.GetOwnerReferences()) {
+		//	continue
+		//}
 
 		pdbWatcherList := &pdbautoscaler.PDBWatcherList{}
 		err = r.Client.List(ctx, pdbWatcherList, &client.ListOptions{Namespace: req.Namespace})
@@ -105,7 +103,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			continue
 		}
 
-		logger.Info("Found pdbwatcher", "name", applicablePDBWatcher.Name)
+		logger.Info("Found pdbwatcher for pod", "name", applicablePDBWatcher.Name, "namespace", pod.Namespace, "podname", pod.Name)
 		pod := pod.DeepCopy()
 		updatedpod := podutil.UpdatePodCondition(&pod.Status, &v1.PodCondition{
 			Type:    v1.DisruptionTarget,
@@ -133,6 +131,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	///if we updated requeue again so we keep updating (could ignore if there were no pods mathing pdbs)
 	// pods till they get off or node is uncordoned.
+	//TODO pull smallest cooldown from all pdbwatchers if they allow defining it.
 	var cooldownNeeded time.Duration
 	if podchanged {
 		cooldownNeeded = cooldown
@@ -164,3 +163,14 @@ func (r *NodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		Complete(r)
 }
+
+/*
+func possibleTarget(owners []metav1.OwnerReference) bool {
+	//this kind of funny since a deployment pod will be owned by a replicaset
+	for _, owner := range owners {
+		if owner.Kind == "ReplicaSet" || owner.Kind == "StatefulSet" {
+			return true
+		}
+	}
+	return false
+}*/
