@@ -125,7 +125,9 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return ctrl.Result{}, err
 		}
 		podchanged = true
-		minCooldown = minDuration(minCooldown, applicablePDBWatcher.Spec.GetCoolDown())
+		if applicablePDBWatcher.Spec.GetCoolDown() < minCooldown {
+			minCooldown = applicablePDBWatcher.Spec.GetCoolDown()
+		}
 	}
 
 	///if we updated requeue again so we keep updating (could ignore if there were no pods mathing pdbs)
@@ -161,13 +163,6 @@ func (r *NodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			},
 		}).
 		Complete(r)
-}
-
-func minDuration(d1, d2 time.Duration) time.Duration {
-	if d1 < d2 {
-		return d1
-	}
-	return d2
 }
 
 /*
