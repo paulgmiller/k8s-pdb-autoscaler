@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -13,16 +15,24 @@ type Eviction struct {
 // PDBWatcherSpec defines the desired state of PDBWatcher
 type PDBWatcherSpec struct {
 	//todo make this mirror horizontalpodautoscaler's target reference
-	TargetName   string   `json:"targetName"`
-	TargetKind   string   `json:"targetKind"` //deployment or statefulset (anything with an update statedgy)
-	LastEviction Eviction `json:"lastEviction,omitempty"`
+	TargetName   string          `json:"targetName"`
+	TargetKind   string          `json:"targetKind"` //deployment or statefulset (anything with an update statedgy)
+	LastEviction Eviction        `json:"lastEviction,omitempty"`
+	CoolDown     metav1.Duration `json:"coolDown,omitempty"`
+}
+
+func (in *PDBWatcherSpec) GetCoolDown() time.Duration {
+	if in.CoolDown.Duration == time.Duration(0) {
+		return time.Minute
+	}
+	return in.CoolDown.Duration
 }
 
 // PDBWatcherStatus defines the observed state of PDBWatcher
 type PDBWatcherStatus struct {
 	LastEviction     Eviction           `json:"lastEviction,omitempty"` //this is the last one the controller has processed.
 	MinReplicas      int32              `json:"minReplicas"`            // Minimum number of replicas to maintain
-	TargetGeneration int64              `json:"deploymentGeneration"`   // generation (spec hash) of deployment or statefulse
+	TargetGeneration int64              `json:"targetGeneration"`       // generation (spec hash) of deployment or statefulse
 	Conditions       []metav1.Condition `json:"conditions,omitempty"`
 }
 
