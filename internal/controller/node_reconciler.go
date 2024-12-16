@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"math"
 	"time"
 
 	pdbautoscaler "github.com/paulgmiller/k8s-pdb-autoscaler/api/v1"
@@ -42,11 +43,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	node := &corev1.Node{}
 	err := r.Get(ctx, req.NamespacedName, node)
 	if err != nil {
-		//should we use a finalizer to scale back down on deletion?
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, nil // PDBWatcher not found, could be deleted, nothing to do
-		}
-		return ctrl.Result{}, err // Error fetching PDBWatcher
+		return ctrl.Result{}, client.IgnoreNotFound(err) // PDBWatcher not found, could be deleted, nothing to do
 	}
 	node = node.DeepCopy() //don't mutate the cache
 	logger.Info("Reconciling node", "name", node.Name, "unschedulable", node.Spec.Unschedulable)
@@ -61,6 +58,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	podchanged := false
+	minCooldown := time.Duration(math.MaxInt64)
 	for _, pod := range podlist.Items {
 		// TODO group pods by namespace to share list/get of pdbwatchers/pdbs
 		// Also  could do this to avoid list/llooku up but need to measure if either helps
@@ -127,6 +125,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			return ctrl.Result{}, err
 		}
 		podchanged = true
+		minCooldown = minDuration(minCooldown, applicablePDBWatcher.Spec.GetCoolDown())
 	}
 
 	///if we updated requeue again so we keep updating (could ignore if there were no pods mathing pdbs)
@@ -134,7 +133,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	//TODO pull smallest cooldown from all pdbwatchers if they allow defining it.
 	var cooldownNeeded time.Duration
 	if podchanged {
-		cooldownNeeded = cooldown
+		cooldownNeeded = minCooldown
 	}
 	return ctrl.Result{RequeueAfter: cooldownNeeded}, nil
 }
@@ -162,6 +161,13 @@ func (r *NodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			},
 		}).
 		Complete(r)
+}
+
+func minDuration(d1, d2 time.Duration) time.Duration {
+	if d1 < d2 {
+		return d1
+	}
+	return d2
 }
 
 /*

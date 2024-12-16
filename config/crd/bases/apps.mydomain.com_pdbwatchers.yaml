@@ -39,6 +39,8 @@ spec:
           spec:
             description: PDBWatcherSpec defines the desired state of PDBWatcher
             properties:
+              coolDown:
+                type: string
               lastEviction:
                 description: EvictionLog defines a log entry for pod evictions
                 properties:
