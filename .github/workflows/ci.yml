@@ -33,10 +33,11 @@ jobs:
       - name: Build Docker image
         run: docker build  .
 
-      - uses: engineerd/setup-kind@v0.6.0
-        with:
-          version: "v0.24.0"
-          skipClusterCreation: true
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
 
       - name: e2e
         run: make test-e2e
