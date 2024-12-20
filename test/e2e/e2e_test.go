@@ -25,24 +25,26 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	policy "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	"k8s.io/kubernetes/pkg/apis/policy"
 
 	"github.com/paulgmiller/k8s-pdb-autoscaler/test/utils"
 )
 
-const namespace = "k8s-pdb-autoscaler-system"
-const kindClusterName = "kind-kind-e2e"
+// SYNC with kustomize file
+const namespace = "k8s-pdb-autoscaler"
+const kindClusterName = "e2e"
 
 var cleanEnv = true
 
 var _ = Describe("controller", Ordered, func() {
 	BeforeAll(func() {
 		//allow to bypass if they ahve one?
+
 		if cleanEnv {
 			By("creating kind cluster")
 			cmd := exec.Command("kind", "create", "cluster", "--config", "test/e2e/kind.yaml", "--name", kindClusterName)
@@ -50,7 +52,7 @@ var _ = Describe("controller", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			fmt.Print(string(output))
 
-			cmd = exec.Command("kubectl", "config", "use-context", "--config", "test/e2e/kind.yaml", "--name", kindClusterName)
+			cmd = exec.Command("kubectl", "config", "use-context", "kind-"+kindClusterName)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -74,8 +76,8 @@ var _ = Describe("controller", Ordered, func() {
 		//utils.UninstallCertManager()
 		if cleanEnv {
 
-			By("removing manager namespace")
-			cmd := exec.Command("kind", "delete", "cluster", "-n", "kind")
+			By("removing kind cluster")
+			cmd := exec.Command("kind", "delete", "cluster", "-n", kindClusterName)
 			_, _ = utils.Run(cmd)
 		}
 	})
@@ -83,7 +85,6 @@ var _ = Describe("controller", Ordered, func() {
 	Context("Operator", func() {
 		ctx := context.Background()
 		It("should run successfully", func() {
-			var controllerPodName string
 			var err error
 
 			// projectimage stores the name of the image used in the example
@@ -116,9 +117,7 @@ var _ = Describe("controller", Ordered, func() {
 
 			By("validating that the controller-manager pod is running as expected")
 			var nodeName string
-			verifyControllerUp := func() error {
-				// Get pod name
-
+			verifyOneRunningPod := func() error {
 				pods, err := clientset.CoreV1().Pods(namespace).List(ctx, v1.ListOptions{LabelSelector: "control-plane=controller-manager", Limit: 1})
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 				if len(pods.Items) != 1 {
@@ -127,17 +126,20 @@ var _ = Describe("controller", Ordered, func() {
 				if pods.Items[0].Status.Phase != "Running" {
 					return fmt.Errorf("controller pod in %s status", pods.Items[0].Status.Phase)
 				}
+				fmt.Printf("controller pod %s running on %s\n", pods.Items[0].Name, pods.Items[0].Spec.NodeName)
 				nodeName = pods.Items[0].Spec.NodeName
 				return nil
 			}
-			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
-
+			EventuallyWithOffset(1, verifyOneRunningPod, time.Minute, time.Second).Should(Succeed())
+			By("By Cordoning " + nodeName)
 			// Cordon and drain the node that the controller-manager pod is running on
 			node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, v1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			node.Spec.Unschedulable = true
 			_, err = clientset.CoreV1().Nodes().Update(ctx, node, v1.UpdateOptions{})
 			Expect(err).NotTo(HaveOccurred())
+
+			By("By Draining " + nodeName)
 			drain := func() error {
 				var podsmeta []v1.ObjectMeta
 				namespaces, err := clientset.CoreV1().Namespaces().List(ctx, v1.ListOptions{})
@@ -158,12 +160,26 @@ var _ = Describe("controller", Ordered, func() {
 						return fmt.Errorf("failed to evict %s/%s: %v", meta.Namespace, meta.Name, err)
 					}
 					ExpectWithOffset(1, err).NotTo(HaveOccurred())
+					fmt.Printf("evicted %s/%s\n", meta.Namespace, meta.Name)
 				}
 				return nil
 			}
 			EventuallyWithOffset(1, drain, time.Minute, time.Second).Should(Succeed())
-
-			//what else make sure we scale back down?
+			//verify there is always one running pod? other might be terminating/creating so need different
+			//check that there are two pods temporarily or does that not matter as long as we succesfully evicted?
+			By("Verifying we scale back down")
+			verifyDeploymentReplicas := func() error {
+				deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, "controller-manager", v1.GetOptions{})
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+				if *deployment.Spec.Replicas != 1 {
+					return fmt.Errorf("got %d controller replicas", *deployment.Spec.Replicas)
+				}
+				return nil
+			}
+			//have to wait longer than pdbwatchers cooldown
+			EventuallyWithOffset(1, verifyDeploymentReplicas, 2*time.Minute, time.Second).Should(Succeed())
+			By("Verifying we only have one pod left")
+			EventuallyWithOffset(1, verifyOneRunningPod, time.Minute, time.Second).Should(Succeed())
 		})
 	})
 })
