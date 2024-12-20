@@ -170,7 +170,6 @@ webhooks:
 	ctx, cancel = context.WithCancel(context.Background())
 	go func() {
 		mgr.Start(ctx)
-
 	}()
 
 	// Wait for the cache to sync
