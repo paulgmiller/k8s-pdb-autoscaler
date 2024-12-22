@@ -159,7 +159,6 @@ var _ = Describe("Node Controller", func() {
 				NamespacedName: nodeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(cooldown))
 
 			By("updating pdb watcher ")
 			pdbwatcher := &v1.PDBWatcher{}
@@ -167,6 +166,9 @@ var _ = Describe("Node Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).ToNot(BeZero())
 			Expect(pdbwatcher.Spec.LastEviction.PodName).To(Equal(podName))
+
+			//shoudld be smallest cooldown but we only have one pdbwatcher right now
+			Expect(result.RequeueAfter).To(Equal(pdbwatcher.Spec.GetCoolDown()))
 
 			By("checking pod condition ")
 

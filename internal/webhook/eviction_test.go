@@ -110,7 +110,7 @@ var _ = Describe("Evictions webhook", func() {
 		AfterEach(func() {
 			By("cleaning up resources")
 			deleteResource := func(obj client.Object) {
-				Expect(k8sClient.Delete(ctx, obj)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, obj, &client.DeleteOptions{})).To(Succeed())
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)
 					return errors.IsNotFound(err)

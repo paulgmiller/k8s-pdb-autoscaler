@@ -335,7 +335,6 @@ var _ = Describe("PDBWatcher Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(cooldown))
 
 			// Deployment is not changed yet
 			err = k8sClient.Get(ctx, deploymentNamespacedName, deployment)
@@ -347,11 +346,12 @@ var _ = Describe("PDBWatcher Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pdbwatcher.Spec.LastEviction.PodName).To(Equal("somepod"))
 			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).ToNot(Equal(pdbwatcher.Status.LastEviction.EvictionTime))
+			Expect(result.RequeueAfter).To(Equal(pdbwatcher.Spec.GetCoolDown()))
 
 			By("scaling down after cooldown")
 			//okay lets say the eviction is older though
 			//TODO make cooldown const/configurable
-			pdbwatcher.Spec.LastEviction.EvictionTime = metav1.NewTime(time.Now().Add(-2 * cooldown))
+			pdbwatcher.Spec.LastEviction.EvictionTime = metav1.NewTime(time.Now().Add(-2 * pdbwatcher.Spec.GetCoolDown()))
 			Expect(k8sClient.Update(ctx, pdbwatcher)).To(Succeed())
 			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).ToNot(Equal(pdbwatcher.Status.LastEviction.EvictionTime))
 

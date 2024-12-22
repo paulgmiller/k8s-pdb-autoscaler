@@ -39,6 +39,8 @@ spec:
           spec:
             description: PDBWatcherSpec defines the desired state of PDBWatcher
             properties:
+              coolDown:
+                type: string
               lastEviction:
                 description: EvictionLog defines a log entry for pod evictions
                 properties:
@@ -130,9 +132,6 @@ spec:
                   - type
                   type: object
                 type: array
-              deploymentGeneration:
-                format: int64
-                type: integer
               lastEviction:
                 description: EvictionLog defines a log entry for pod evictions
                 properties:
@@ -145,9 +144,12 @@ spec:
               minReplicas:
                 format: int32
                 type: integer
+              targetGeneration:
+                format: int64
+                type: integer
             required:
-            - deploymentGeneration
             - minReplicas
+            - targetGeneration
             type: object
         type: object
     served: true

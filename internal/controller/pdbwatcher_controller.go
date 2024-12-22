@@ -31,8 +31,6 @@ type PDBWatcherReconciler struct {
 	Recorder record.EventRecorder
 }
 
-const cooldown = 1 * time.Minute
-
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.mydomain.com,resources=pdbwatchers/finalizers,verbs=update
@@ -48,10 +46,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	err := r.Get(ctx, req.NamespacedName, pdbWatcher)
 	if err != nil {
 		//should we use a finalizer to scale back down on deletion?
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, nil // PDBWatcher not found, could be deleted, nothing to do
-		}
-		return ctrl.Result{}, err // Error fetching PDBWatcher
+		return ctrl.Result{}, client.IgnoreNotFound(err) // Error fetching PDBWatcher
 	}
 	pdbWatcher = pdbWatcher.DeepCopy() //don't mutate the cache
 
@@ -131,7 +126,8 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		pdbWatcher.Status.TargetGeneration = target.Obj().GetGeneration()
 		//pdbWatcher.Status.LastEviction = pdbWatcher.Spec.LastEviction //we could still keep a log here if thats useful
 		ready(&pdbWatcher.Status.Conditions, "Reconciled", "eviction with scale up")
-		return ctrl.Result{RequeueAfter: cooldown}, r.Status().Update(ctx, pdbWatcher)
+
+		return ctrl.Result{RequeueAfter: pdbWatcher.Spec.GetCoolDown()}, r.Status().Update(ctx, pdbWatcher)
 	}
 
 	//what if we're allowed disruptions >0 and minreplicas == replicas? Could argue that we should mark the eviction as handled
@@ -140,6 +136,7 @@ func (r *PDBWatcherReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	//Cool down time makes sure we're not still getting more evictions
 	//we could substantially reduce this if we looked at pods and knew that none remaining (not already evicted) had been an eviction target but that means tracking more data in pdbwatcher
 	// or using pod conditons which we're not doing.....yet
+	cooldown := pdbWatcher.Spec.GetCoolDown()
 	if time.Since(pdbWatcher.Spec.LastEviction.EvictionTime.Time) < cooldown {
 		logger.Info(fmt.Sprintf("Giving %s/%s cooldown of  %s after last eviction %s ", target.Obj().GetNamespace(), target.Obj().GetName(), cooldown, pdbWatcher.Spec.LastEviction.EvictionTime))
 		return ctrl.Result{RequeueAfter: cooldown}, nil
