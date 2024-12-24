@@ -136,21 +136,6 @@ func (r *DeploymentToPDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Deployment{}).
 		WithEventFilter(predicate.Funcs{
-			// Only trigger for Create and Delete events
-			CreateFunc: func(e event.CreateEvent) bool {
-				logger.Info("Create event detected, pdb will be created if not exists")
-				// Handle create event (this will be true for all create events)
-				//creationTime, _ := time.Parse(time.RFC3339, e.Object.GetCreationTimestamp().String())
-				//if time.Since(creationTime) < 5*time.Minute {
-				//	return false // Ignore create if it's an existing resource (e.g., by checking timestamp)
-				//}
-				return true // Allow to create for new resources
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				logger.Info("Delete event detected, pdb will be deleted if exists")
-				// Handle delete event (this will be true for all delete events)
-				return true
-			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
 				logger.Info("Update event detected, no action will be taken")
 				// No need to handle update event
@@ -162,6 +147,6 @@ func (r *DeploymentToPDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
 			},
 		}).
-		Owns(&policyv1.PodDisruptionBudget{}). // Watch PDBs for ownership
+		//Owns(&policyv1.PodDisruptionBudget{}). // Watch PDBs for ownership
 		Complete(r)
 }
