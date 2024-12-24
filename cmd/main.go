@@ -62,6 +62,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var evictionWebhook bool
+	var autopdb bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metric endpoint binds to. "+
 		"Use the port :8080. If not set, it will be 0 in order to disable the metrics server")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -74,7 +75,7 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.BoolVar(&evictionWebhook, "eviction-webhook", false,
 		"create a webhook that intercepts evictions and updates the pdbwatcher, if false will rely on node cordon for signal")
-
+	flag.BoolVar(&autopdb, "auto-pdb", false, "automatically create pdbs for deployments with surge")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -144,15 +145,16 @@ func main() {
 	}
 	setupLog.Info("PDBWatcherReconciler  setup completed")
 
-	if err = (&controllers.DeploymentToPDBReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "DeploymentToPDBReconciler")
-		os.Exit(1)
+	if autopdb {
+		if err = (&controllers.DeploymentToPDBReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "DeploymentToPDBReconciler")
+			os.Exit(1)
+		}
+		setupLog.Info("DeploymentToPDBReconciler  setup completed")
 	}
-	setupLog.Info("DeploymentToPDBReconciler  setup completed")
-
 	if err = (&controllers.PDBToPDBWatcherReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
