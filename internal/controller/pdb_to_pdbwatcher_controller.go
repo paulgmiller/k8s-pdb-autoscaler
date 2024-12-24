@@ -21,6 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+var errOwnerNotFound error = fmt.Errorf("owner not found")
+
 // PDBToPDBWatcherReconciler reconciles a PodDisruptionBudget object.
 type PDBToPDBWatcherReconciler struct {
 	client.Client
@@ -34,13 +36,16 @@ type PDBToPDBWatcherReconciler struct {
 
 // Reconcile reads the state of the cluster for a PDB and creates/deletes PDBWatchers accordingly.
 func (r *PDBToPDBWatcherReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
+	logger.WithValues("pdb", req.Name, "namespace", req.Namespace)
+	ctx = log.IntoContext(ctx, logger)
 	// Fetch the PodDisruptionBudget object based on the reconcile request
 	var pdb policyv1.PodDisruptionBudget
 	err := r.Get(ctx, req.NamespacedName, &pdb)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			err := r.Delete(ctx, &types.PDBWatcher{ObjectMeta: metav1.ObjectMeta{Name: req.Name, Namespace: req.Namespace}})
+			logger.Info("Deleted PDBWatcher")
 			return reconcile.Result{}, client.IgnoreNotFound(err)
 		}
 		return reconcile.Result{}, err
@@ -54,14 +59,12 @@ func (r *PDBToPDBWatcherReconciler) Reconcile(ctx context.Context, req reconcile
 			return ctrl.Result{}, err
 		}
 
-		log.Info("Found: ", "pdb", pdb.Name, "namespace", pdb.Namespace)
-
 		deploymentName, e := r.discoverDeployment(ctx, &pdb)
 		if e != nil {
+			if e == errOwnerNotFound {
+				return reconcile.Result{}, nil
+			}
 			return reconcile.Result{}, e
-		}
-		if deploymentName == "" { //ther was no owning deployment don't autocreate. Better sentinal value?
-			return reconcile.Result{}, nil
 		}
 
 		// Create a new PDBWatcher
@@ -88,7 +91,7 @@ func (r *PDBToPDBWatcherReconciler) Reconcile(ctx context.Context, req reconcile
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("unable to create PDBWatcher: %v", err)
 		}
-		log.Info("Created PDBWatcher", "name", pdb.Name)
+		logger.Info("Created PDBWatcher")
 	}
 	// Return no error and no requeue
 	return reconcile.Result{}, nil
@@ -126,7 +129,7 @@ func (r *PDBToPDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb 
 	if err != nil {
 		return "", fmt.Errorf("error listing pods: %v", err)
 	}
-	logger.Info("Number of pods found", "count", "namespace", "pdb", len(podList.Items), pdb.Namespace, pdb.Name)
+	logger.Info("Number of pods found", "count", len(podList.Items))
 
 	if len(podList.Items) == 0 {
 		return "", fmt.Errorf("no pods found matching the PDB selector %s; leaky pdb(?!)", pdb.Name)
@@ -134,8 +137,6 @@ func (r *PDBToPDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb 
 
 	// Iterate through each pod
 	for _, pod := range podList.Items {
-		logger.Info("Examining pod", "pod", pod.Name)
-
 		// Check the OwnerReferences of each pod
 		for _, ownerRef := range pod.OwnerReferences {
 			if ownerRef.Kind == "ReplicaSet" {
@@ -170,6 +171,6 @@ func (r *PDBToPDBWatcherReconciler) discoverDeployment(ctx context.Context, pdb 
 
 		}
 	}
-
-	return "", nil
+	logger.Info("No Deployment owner found")
+	return "", errOwnerNotFound
 }
