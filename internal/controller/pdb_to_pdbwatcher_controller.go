@@ -86,9 +86,9 @@ func (r *PDBToPDBWatcherReconciler) Reconcile(ctx context.Context, req reconcile
 
 		err := r.Create(ctx, &pdbWatcher)
 		if err != nil {
-			log.Info("Created PDBWatcher", "name", pdb.Name)
 			return reconcile.Result{}, fmt.Errorf("unable to create PDBWatcher: %v", err)
 		}
+		log.Info("Created PDBWatcher", "name", pdb.Name)
 	}
 	// Return no error and no requeue
 	return reconcile.Result{}, nil
