@@ -147,6 +147,6 @@ func (r *DeploymentToPDBReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration()
 			},
 		}).
-		//Owns(&policyv1.PodDisruptionBudget{}). // Watch PDBs for ownership
+		Owns(&policyv1.PodDisruptionBudget{}). // Watch PDBs for ownership
 		Complete(r)
 }
