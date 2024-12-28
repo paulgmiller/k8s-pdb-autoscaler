@@ -21,21 +21,23 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 	var (
 		reconciler *PDBToPDBWatcherReconciler
 		// Set the namespace to "test" instead of "default"
-		namespace      = "test"
+		namespace      string
 		deploymentName = "example-deployment"
 	)
 	const podName = "example-pod"
+	ctx := context.Background()
 	BeforeEach(func() {
 
 		// Create the Namespace object (from corev1)
 		namespaceObj := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: namespace,
+				GenerateName: "test",
 			},
 		}
 
 		// create the namespace using the controller-runtime client
-		_ = k8sClient.Create(context.Background(), namespaceObj)
+		Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+		namespace = namespaceObj.Name
 
 		s := scheme.Scheme
 		Expect(appsv1.AddToScheme(s)).To(Succeed())
@@ -84,7 +86,8 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 		}
 
 		// Create the deployment
-		_ = reconciler.Client.Create(context.Background(), deployment)
+		err := reconciler.Client.Create(ctx, deployment)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Define the ReplicaSet
 		rs := &appsv1.ReplicaSet{
@@ -127,8 +130,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 				},
 			},
 		}
-		_ = k8sClient.Create(context.Background(), rs)
-		//Expect(err).To(Equal(nil))
+		Expect(k8sClient.Create(ctx, rs)).To(Succeed())
 
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -155,8 +157,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 				},
 			},
 		}
-		_ = k8sClient.Create(context.Background(), pod)
-		//Expect(err).To(Equal(nil))
+		Expect(k8sClient.Create(context.Background(), pod)).To(Succeed())
 
 		pod.Status = corev1.PodStatus{ // Use corev1.PodStatus
 			Phase: corev1.PodRunning,
@@ -167,21 +168,11 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 				},
 			},
 		}
-		err := k8sClient.Status().Update(context.Background(), pod)
+		err = k8sClient.Status().Update(ctx, pod)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		// Create the PDB with a deletion timestamp set
-		pdb := &policyv1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName,
-				Namespace: namespace,
-			},
-		}
-		_ = reconciler.Client.Delete(context.Background(), pdb)
-		//Expect(err).To(BeNil())
-
 	})
 
 	Context("When the PDB exists", func() {
@@ -217,8 +208,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 			}
 
 			// Reconcile the request
-			_, err = reconciler.Reconcile(context.Background(), req)
-
+			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).ShouldNot(HaveOccurred())
 
 			// Verify that the PDBWatcher was created
@@ -238,7 +228,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 			}
 
 			// Add PDB to fake client
-			_ = k8sClient.Create(context.Background(), pdb)
+			Expect(k8sClient.Create(ctx, pdb)).To(Succeed())
 
 			// Prepare PDBWatcher and create it
 			pdbWatcher := &types.PDBWatcher{

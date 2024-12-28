@@ -16,7 +16,7 @@ import (
 )
 
 var _ = Describe("DeploymentToPDBReconciler", func() {
-	const namespace = "test"
+	var namespace string
 	const deploymentName = "example-deployment"
 
 	var (
@@ -25,15 +25,15 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 	)
 
 	BeforeEach(func() {
-		// Create the Namespace object (from corev1)
 		namespaceObj := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: namespace,
+				GenerateName: "test",
 			},
 		}
 
 		// create the namespace using the controller-runtime client
-		_ = k8sClient.Create(context.Background(), namespaceObj)
+		Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+		namespace = namespaceObj.Name
 
 		// Create a fake clientset and add required schemas
 		s := scheme.Scheme
@@ -84,20 +84,11 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 		}
 
 		// Create the deployment
-		_ = r.Client.Create(context.Background(), deployment)
-		//Expect(err).To(BeNil())
+		err := r.Client.Create(context.Background(), deployment)
+		Expect(err).To(BeNil())
 	})
 
 	AfterEach(func() {
-		// Create the PDB with a deletion timestamp set
-		pdb := &policyv1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName,
-				Namespace: namespace,
-			},
-		}
-		_ = r.Client.Delete(context.Background(), pdb)
-		//Expect(err).To(BeNil())
 
 	})
 
@@ -160,7 +151,7 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 			// Create the PDB first
 			pdb := &policyv1.PodDisruptionBudget{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      deploymentName,
+					Name:      "someothername",
 					Namespace: namespace,
 				},
 				Spec: policyv1.PodDisruptionBudgetSpec{

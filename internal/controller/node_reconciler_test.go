@@ -22,18 +22,29 @@ import (
 
 var _ = Describe("Node Controller", func() {
 	const resourceName = "test-resource"
-	const namespace = "default"
+	var namespace string
 	const podName = "example-pod"
 	const nodeName = "mynode"
 
 	ctx := context.Background()
-	typeNamespacedName := types.NamespacedName{Name: resourceName, Namespace: namespace}
-	podNamespacedName := types.NamespacedName{Name: podName, Namespace: namespace}
+	var typeNamespacedName, podNamespacedName types.NamespacedName
 	nodeNamespacedName := types.NamespacedName{Name: nodeName}
 
 	Context("When reconciling a resource", func() {
 
 		BeforeEach(func() {
+			namespaceObj := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test",
+				},
+			}
+
+			// create the namespace using the controller-runtime client
+			Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+			namespace = namespaceObj.Name
+			typeNamespacedName = types.NamespacedName{Name: resourceName, Namespace: namespace}
+			podNamespacedName = types.NamespacedName{Name: podName, Namespace: namespace}
+
 			By("creating the custom resource for the Kind PDBWatcher")
 			pdbwatcher := &v1.PDBWatcher{
 				ObjectMeta: metav1.ObjectMeta{
@@ -132,10 +143,8 @@ var _ = Describe("Node Controller", func() {
 				}, time.Second*10, time.Millisecond*250).Should(BeTrue(), "Failed to delete resource "+obj.GetName())
 			}
 
-			deleteResource(&v1.PDBWatcher{ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: namespace}})
-			deleteResource(&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: namespace}})
-			deleteResource(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: namespace}})
 			deleteResource(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}})
+			deleteResource(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: namespace}})
 		})
 
 		It("should handle cordon by updating pod and pdbwatcher", func() {
