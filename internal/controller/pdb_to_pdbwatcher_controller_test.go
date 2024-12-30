@@ -172,9 +172,6 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	AfterEach(func() {
-	})
-
 	Context("When the PDB exists", func() {
 		It("should create a PDBWatcher if it doesn't already exist", func() {
 			// Prepare a PodDisruptionBudget in the "test" namespace

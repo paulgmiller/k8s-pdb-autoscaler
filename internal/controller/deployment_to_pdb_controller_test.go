@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -22,9 +23,12 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 	var (
 		r          *DeploymentToPDBReconciler
 		deployment *appsv1.Deployment
+		ctx        context.Context
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
+
 		namespaceObj := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "test",
@@ -32,7 +36,7 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 		}
 
 		// create the namespace using the controller-runtime client
-		Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+		Expect(k8sClient.Create(ctx, namespaceObj)).To(Succeed())
 		namespace = namespaceObj.Name
 
 		// Create a fake clientset and add required schemas
@@ -84,12 +88,8 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 		}
 
 		// Create the deployment
-		err := r.Client.Create(context.Background(), deployment)
+		err := r.Client.Create(ctx, deployment)
 		Expect(err).To(BeNil())
-	})
-
-	AfterEach(func() {
-
 	})
 
 	Describe("when a deployment is created", func() {
@@ -102,12 +102,12 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 			}
 
 			// Call the reconciler
-			_, err := r.Reconcile(context.Background(), req)
+			_, err := r.Reconcile(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Check if PDB is created
 			pdb := &policyv1.PodDisruptionBudget{}
-			err = r.Client.Get(context.Background(), client.ObjectKey{
+			err = r.Client.Get(ctx, client.ObjectKey{
 				Namespace: namespace,
 				Name:      deploymentName,
 			}, pdb)
@@ -116,13 +116,51 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 			Expect(pdb.Name).To(Equal(deploymentName))
 			Expect((*pdb.Spec.MinAvailable).IntVal).To(Equal(int32(3)))
 		})
+
+		It("should not create a PodDisruptionBudget if one already matches", func() {
+			minavailable := intstr.FromInt(1)
+			existingpdb := &policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rando",
+					Namespace: namespace,
+				},
+				Spec: policyv1.PodDisruptionBudgetSpec{
+					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{
+						"app": "example",
+					},
+					},
+					MinAvailable: &minavailable,
+				},
+			}
+			Expect(r.Client.Create(ctx, existingpdb)).To(Succeed())
+
+			req := reconcile.Request{
+				NamespacedName: client.ObjectKey{
+					Namespace: namespace,
+					Name:      deploymentName,
+				},
+			}
+
+			// Call the reconciler
+			_, err := r.Reconcile(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Check if PDB is created
+			newpdb := &policyv1.PodDisruptionBudget{}
+			err = r.Client.Get(ctx, client.ObjectKey{
+				Namespace: namespace,
+				Name:      deploymentName,
+			}, newpdb)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+			//should we list it?
+		})
 	})
 
 	Describe("when a deployment is deleted", func() {
 		It("should delete the corresponding PodDisruptionBudget", func() {
 
 			// Now delete the deployment
-			err := r.Client.Delete(context.Background(), deployment)
+			err := r.Client.Delete(ctx, deployment)
 			Expect(err).ToNot(HaveOccurred())
 
 			req := reconcile.Request{
@@ -133,12 +171,12 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 			}
 
 			// Reconcile should delete the PDB
-			_, err = r.Reconcile(context.Background(), req)
+			_, err = r.Reconcile(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Check if PDB was deleted
 			pdb := &policyv1.PodDisruptionBudget{}
-			err = r.Client.Get(context.Background(), client.ObjectKey{
+			err = r.Client.Get(ctx, client.ObjectKey{
 				Namespace: namespace,
 				Name:      deploymentName,
 			}, pdb)
@@ -161,11 +199,11 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 					},
 				},
 			}
-			err := r.Client.Create(context.Background(), pdb)
+			err := r.Client.Create(ctx, pdb)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Reconcile should not take any further action since the PDB already exists
-			_, err = r.Reconcile(context.Background(), reconcile.Request{
+			_, err = r.Reconcile(ctx, reconcile.Request{
 				NamespacedName: client.ObjectKey{
 					Namespace: namespace,
 					Name:      deploymentName,
