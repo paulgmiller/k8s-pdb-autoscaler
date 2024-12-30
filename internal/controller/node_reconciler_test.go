@@ -213,7 +213,3 @@ var _ = Describe("Node Controller", func() {
 		})
 	})
 })
-
-func int64Ptr(i int64) *int64 {
-	return &i
-}
