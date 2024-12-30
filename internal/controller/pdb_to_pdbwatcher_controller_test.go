@@ -23,10 +23,11 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 		// Set the namespace to "test" instead of "default"
 		namespace      string
 		deploymentName = "example-deployment"
+		ctx            context.Context
 	)
 	const podName = "example-pod"
-	ctx := context.Background()
 	BeforeEach(func() {
+		ctx = context.Background()
 
 		// Create the Namespace object (from corev1)
 		namespaceObj := &corev1.Namespace{
@@ -36,7 +37,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 		}
 
 		// create the namespace using the controller-runtime client
-		Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+		Expect(k8sClient.Create(ctx, namespaceObj)).To(Succeed())
 		namespace = namespaceObj.Name
 
 		s := scheme.Scheme
@@ -157,7 +158,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 				},
 			},
 		}
-		Expect(k8sClient.Create(context.Background(), pod)).To(Succeed())
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
 
 		pod.Status = corev1.PodStatus{ // Use corev1.PodStatus
 			Phase: corev1.PodRunning,
@@ -189,11 +190,11 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 			}
 
 			// Add PDB to fake client
-			Expect(k8sClient.Create(context.Background(), pdb)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, pdb)).Should(Succeed())
 
 			// Prepare the PDBWatcher object that will be checked if it exists
 			pdbWatcher := &types.PDBWatcher{}
-			err := k8sClient.Get(context.Background(), client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
 			Expect(err).Should(HaveOccurred()) // PDBWatcher does not exist initially
 
 			// Simulate PDBWatcher creation
@@ -209,7 +210,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 
 			// Verify that the PDBWatcher was created
-			err = k8sClient.Get(context.Background(), client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
+			err = k8sClient.Get(ctx, client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
 			Expect(err).Should(Succeed()) // PDBWatcher should now exist
 		})
 	})
@@ -234,10 +235,10 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 					Namespace: namespace,
 				},
 			}
-			_ = k8sClient.Create(context.Background(), pdbWatcher)
+			Expect(k8sClient.Create(ctx, pdbWatcher)).Should(Succeed())
 
 			// Now, delete the PDB
-			Expect(k8sClient.Delete(context.Background(), pdb)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, pdb)).Should(Succeed())
 
 			// Reconcile the request to check if PDBWatcher is deleted
 			req := reconcile.Request{
@@ -246,12 +247,12 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 					Namespace: namespace,
 				},
 			}
-			_, err := reconciler.Reconcile(context.Background(), req)
+			_, err := reconciler.Reconcile(ctx, req)
 
 			Expect(err).ShouldNot(HaveOccurred())
 
 			// Verify that the PDBWatcher was deleted
-			err = k8sClient.Get(context.Background(), client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
+			err = k8sClient.Get(ctx, client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
 			Expect(err).Should(HaveOccurred()) // PDBWatcher should no longer exist
 		})
 	})
@@ -266,7 +267,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 				},
 			}
 
-			_ = k8sClient.Create(context.Background(), pdb)
+			Expect(k8sClient.Create(ctx, pdb)).Should(Succeed())
 
 			// Prepare the PDBWatcher object that will be created if it doesn't exist
 			pdbWatcher := &types.PDBWatcher{
@@ -275,7 +276,7 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 					Namespace: namespace,
 				},
 			}
-			_ = k8sClient.Create(context.Background(), pdbWatcher)
+			Expect(k8sClient.Create(ctx, pdbWatcher)).Should(Succeed())
 
 			// Simulate PDBWatcher already exists scenario
 			req := reconcile.Request{
@@ -286,12 +287,12 @@ var _ = Describe("PDBToPDBWatcherReconciler", func() {
 			}
 
 			// Reconcile the request
-			_, err := reconciler.Reconcile(context.Background(), req)
+			_, err := reconciler.Reconcile(ctx, req)
 
 			Expect(err).ShouldNot(HaveOccurred())
 
 			// Verify that the PDBWatcher was not created again
-			err = k8sClient.Get(context.Background(), client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
+			err = k8sClient.Get(ctx, client.ObjectKey{Name: deploymentName, Namespace: namespace}, pdbWatcher)
 			Expect(err).Should(Succeed()) // PDBWatcher should already exist, not re-created
 		})
 	})

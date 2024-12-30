@@ -30,7 +30,7 @@ var _ = Describe("Node Controller", func() {
 	var typeNamespacedName, podNamespacedName types.NamespacedName
 	nodeNamespacedName := types.NamespacedName{Name: nodeName}
 
-	Context("When reconciling a resource", func() {
+	Context("When reconciling a node resource", func() {
 
 		BeforeEach(func() {
 			namespaceObj := &corev1.Namespace{
@@ -40,7 +40,7 @@ var _ = Describe("Node Controller", func() {
 			}
 
 			// create the namespace using the controller-runtime client
-			Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+			Expect(k8sClient.Create(ctx, namespaceObj)).To(Succeed())
 			namespace = namespaceObj.Name
 			typeNamespacedName = types.NamespacedName{Name: resourceName, Namespace: namespace}
 			podNamespacedName = types.NamespacedName{Name: podName, Namespace: namespace}

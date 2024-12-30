@@ -39,7 +39,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			}
 
 			// create the namespace using the controller-runtime client
-			Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+			Expect(k8sClient.Create(ctx, namespaceObj)).To(Succeed())
 			namespace = namespaceObj.Name
 			typeNamespacedName = types.NamespacedName{Name: resourceName, Namespace: namespace}
 			deploymentNamespacedName = types.NamespacedName{Name: deploymentName, Namespace: namespace}
@@ -438,7 +438,7 @@ var _ = Describe("PDBWatcher Controller", func() {
 			}
 
 			// create the namespace using the controller-runtime client
-			Expect(k8sClient.Create(context.Background(), namespaceObj)).To(Succeed())
+			Expect(k8sClient.Create(ctx, namespaceObj)).To(Succeed())
 			namespace = namespaceObj.Name
 			typeNamespacedName = types.NamespacedName{Name: resourceName, Namespace: namespace}
 		})
