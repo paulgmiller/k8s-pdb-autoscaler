@@ -88,8 +88,7 @@ var _ = Describe("DeploymentToPDBReconciler", func() {
 		}
 
 		// Create the deployment
-		err := r.Client.Create(ctx, deployment)
-		Expect(err).To(BeNil())
+		Expect(r.Client.Create(ctx, deployment)).To(Succeed())
 	})
 
 	Describe("when a deployment is created", func() {
