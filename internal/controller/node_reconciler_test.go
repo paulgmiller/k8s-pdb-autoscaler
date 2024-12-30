@@ -9,8 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1" // Import corev1 package
@@ -22,13 +22,10 @@ import (
 
 var _ = Describe("Node Controller", func() {
 	const resourceName = "test-resource"
-	var namespace string
 	const podName = "example-pod"
-	const nodeName = "mynode"
-
 	ctx := context.Background()
-	var typeNamespacedName, podNamespacedName types.NamespacedName
-	nodeNamespacedName := types.NamespacedName{Name: nodeName}
+	var namespace, nodeName string
+	var typeNamespacedName, podNamespacedName, nodeNamespacedName types.NamespacedName
 
 	Context("When reconciling a node resource", func() {
 
@@ -44,6 +41,9 @@ var _ = Describe("Node Controller", func() {
 			namespace = namespaceObj.Name
 			typeNamespacedName = types.NamespacedName{Name: resourceName, Namespace: namespace}
 			podNamespacedName = types.NamespacedName{Name: podName, Namespace: namespace}
+
+			nodeName = rand.String(8)
+			nodeNamespacedName = types.NamespacedName{Name: nodeName}
 
 			By("creating the custom resource for the Kind PDBWatcher")
 			pdbwatcher := &v1.PDBWatcher{
@@ -131,22 +131,6 @@ var _ = Describe("Node Controller", func() {
 
 		})
 
-		AfterEach(func() {
-			By("cleaning up resources")
-			deleteResource := func(obj client.Object) {
-				//no clue why we need to set GracePeriodSeconds 0 here but not in eviction_test.go
-				//if we don't set it we get a
-				Expect(k8sClient.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: int64Ptr(0)})).To(Succeed())
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-					return errors.IsNotFound(err)
-				}, time.Second*10, time.Millisecond*250).Should(BeTrue(), "Failed to delete resource "+obj.GetName())
-			}
-
-			deleteResource(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}})
-			deleteResource(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: namespace}})
-		})
-
 		It("should handle cordon by updating pod and pdbwatcher", func() {
 			nodeReconciler := &NodeReconciler{
 				Client: k8sClient,
@@ -170,21 +154,20 @@ var _ = Describe("Node Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(cooldown))
 
-			By("updating pdb watcher ")
-			pdbwatcher := &v1.PDBWatcher{}
-			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).ToNot(BeZero())
-			Expect(pdbwatcher.Spec.LastEviction.PodName).To(Equal(podName))
-
 			By("checking pod condition ")
-
 			pod := &corev1.Pod{}
 			err = k8sClient.Get(ctx, podNamespacedName, pod)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pod.Status.Conditions).To(HaveLen(2))
 			//First is still ready ignore it
 			Expect(pod.Status.Conditions[1].Type).To(Equal(corev1.DisruptionTarget))
+
+			By("updating pdb watcher ")
+			pdbwatcher := &v1.PDBWatcher{}
+			err = k8sClient.Get(ctx, typeNamespacedName, pdbwatcher)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pdbwatcher.Spec.LastEviction.EvictionTime).ToNot(BeZero())
+			Expect(pdbwatcher.Spec.LastEviction.PodName).To(Equal(podName))
 
 		})
 
