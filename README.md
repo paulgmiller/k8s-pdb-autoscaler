@@ -1,3 +1,6 @@
+This now lives at https://github.com/Azure/eviction-autoscaler/
+
+
 # K8s-pdb-autoscaler
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/paulgmiller/k8s-pdb-autoscaler)](https://goreportcard.com/report/github.com/paulgmiller/k8s-pdb-autoscaler)
